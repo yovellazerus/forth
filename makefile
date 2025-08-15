@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -O2
-OBJ = main.o Lexer.o
+OBJ = main.o utils.o Lexer.o
 TARGET = program
 RM = rm -f
 
@@ -22,6 +22,9 @@ main.o: main.c
 
 Lexer.o: Lexer.c
 	$(CC) $(CFLAGS) -c Lexer.c
+
+utils.o: utils.c
+	$(CC) $(CFLAGS) -c utils.c
 
 clean:
 	$(RM) $(OBJ) $(TARGET)

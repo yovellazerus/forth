@@ -1,19 +1,7 @@
 #ifndef LEXER_H_
 #define LEXER_H_
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <ctype.h>
-#include <string.h>
-#include <assert.h>
-
-typedef enum {
-    Err_ok = 0,
-    Err_not_implemented,
-
-    Err_count,
-} Err;
+#include "utils.h"
 
 typedef enum {
     TokenType_eof = 0,
@@ -39,6 +27,7 @@ typedef struct Token_t
 
 Token Token_create(TokenType type, int32_t value, const char* idf_start, size_t idf_size);
 void Token_dump(Token* tok, FILE* stream);
+void Token_dumbAllTokens(Token tokens[MAX_TOKENS], FILE* stream);
 
 typedef struct Lexer_t
 {
@@ -49,6 +38,7 @@ typedef struct Lexer_t
 } Lexer;
 
 Lexer Lexer_create(const char* source);
+size_t Lexer_lexAllSource(Lexer* lex, Token tokens[MAX_TOKENS]);
 void Lexer_trim(Lexer* lex);
 Token Lexer_nextToken(Lexer* lex);
 Token Lexer_makeNumber(Lexer* lex);
@@ -57,13 +47,6 @@ Token Lexer_makeComment(Lexer* lex);
 Token Lexer_makeOperation(Lexer* lex);
 Token Lexer_makeString(Lexer* lex);
 Token Lexer_makeChar(Lexer* lex);
-
-
-
-
-
-
-
 
 
 #endif // LEXER_H_
