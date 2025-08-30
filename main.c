@@ -246,10 +246,16 @@ void parser(const char* source, Word* dict[MAX_WORDS]){
             i++;
         }
 
-        // skip comments ( \ ... end of line )
+        // skip comments: \ ... end of line
         if (source[i] == '\\') {
             while (source[i] && source[i] != '\n') i++;
             if (source[i] == '\n') i++;
+            continue;
+        }
+        // skip comments: (...)
+        if (source[i] == '(') {
+            while (source[i] && source[i] != ')') i++;
+            if (source[i] == ')') i++;
             continue;
         }
 
