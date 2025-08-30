@@ -70,7 +70,7 @@ typedef void (*Code)(void);
 typedef int32_t Cell;
 
 typedef struct Word_t {
-    const char* name;
+    char* name;
     Code code;
 } Word;
 
@@ -95,6 +95,14 @@ Word* Word_find(Word* dict[MAX_WORDS], const char* name){
     }
     return NULL;
 }
+
+void Word_clear(Word* dict[MAX_WORDS]){
+    for(size_t i = 0; i < word_count; i++){
+        free(dict[i]->name);
+    }
+    word_count = 0;
+}
+
 void Word_insert(Word* dict[MAX_WORDS], Word* target){
     if(word_count >= MAX_WORDS){
         fprintf(stderr, RED "ERROR: to many words in the dictionary\n" RESET);
@@ -107,13 +115,6 @@ void Word_insert(Word* dict[MAX_WORDS], Word* target){
     else{
         return;
     }
-}
-
-void Word_clear(Word* dict[MAX_WORDS]){
-    for(size_t i = 0; i < word_count; i++){
-        free(dict[i]->name);
-    }
-    word_count = 0;
 }
 
 Cell stack[MAX_STACK_SIZE] = {0};
@@ -186,15 +187,13 @@ void Code_swap(){
     push(stack, a);
 }
 
-void Code_over(){
-    Cell x3 = pop(stack);
-    Cell x2 = pop(stack);
-    Cell x1 = pop(stack);
-    push(stack, x2);
-    push(stack, x3);
-    push(stack, x1);
-
-} 
+void Code_over() {
+    Cell a = pop(stack); 
+    Cell b = pop(stack); 
+    push(stack, b);    
+    push(stack, a);    
+    push(stack, b);      
+}
 
 void Code_rot(){
     Cell x3 = pop(stack);
@@ -205,11 +204,26 @@ void Code_rot(){
     push(stack, x1);
 }
 
+void Code_minus_rot(){
+    Cell x3 = pop(stack); 
+    Cell x2 = pop(stack); 
+    Cell x1 = pop(stack); 
+    push(stack, x3); 
+    push(stack, x1); 
+    push(stack, x2); 
+}
+void Code_emit(){ 
+    putchar(pop(stack)); 
+}
+void Code_cr(){ 
+    putchar('\n'); 
+}
+
 // I/O:
 
 void Code_dot(){
     Cell a = pop(stack);
-    printf("%d\n", a);
+    printf("%d (0x%X)\n", a, a);
 }
 
 // System:
@@ -257,7 +271,13 @@ void parser(const char* source, Word* dict[MAX_WORDS]){
         } else {
             // try parse number
             char *end;
+            errno = 0;
             long val = strtol(token, &end, 0); // base==0 for auto-detect the base
+            if (errno == ERANGE) {
+                fprintf(stderr, RED "ERROR: number out of range: `%s`\n" RESET, token);
+                Word_clear(dict);
+                exit(1);
+            }
             if (*end == '\0') {
                 push(stack, (Cell)val);
             } else {
@@ -292,17 +312,28 @@ int main(int argc, char* argv[]){
         cmdline = true;
     }
 
+    // Arithmetic
     Word_insert(dict, Word_create("+", Code_add));
     Word_insert(dict, Word_create("-", Code_sub));
     Word_insert(dict, Word_create("*", Code_mul));
     Word_insert(dict, Word_create("/", Code_div));
     Word_insert(dict, Word_create("%", Code_mod));
-    Word_insert(dict, Word_create(".", Code_dot));
-    Word_insert(dict, Word_create("exit", Code_exit));
+
+    // Stack manipulation
     Word_insert(dict, Word_create("dup", Code_dup));
+    Word_insert(dict, Word_create("drop", Code_drop));
     Word_insert(dict, Word_create("swap", Code_swap));
     Word_insert(dict, Word_create("over", Code_over));
     Word_insert(dict, Word_create("rot", Code_rot));
+    Word_insert(dict, Word_create("-rot", Code_minus_rot));
+
+    // Output / I/O
+    Word_insert(dict, Word_create(".", Code_dot));
+    Word_insert(dict, Word_create("emit", Code_emit));
+    Word_insert(dict, Word_create("cr", Code_cr));
+
+    // Control / System
+    Word_insert(dict, Word_create("exit", Code_exit));
 
     if(cmdline){
         printf("\nWelcome to the Forth programming language interpreter,\n");

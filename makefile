@@ -1,6 +1,6 @@
 # Compiler settings
 CC = gcc
-CFLAGS = # -Wall -O2
+CFLAGS = -Wall -O2
 
 # froth program
 OBJ = main.o
