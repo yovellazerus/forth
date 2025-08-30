@@ -7,6 +7,58 @@
 #include <string.h> 
 #include <errno.h> 
 
+// Reset
+#define RESET       "\x1b[0m"
+
+// Regular colors
+#define BLACK       "\x1b[30m"
+#define RED         "\x1b[31m"
+#define GREEN       "\x1b[32m"
+#define YELLOW      "\x1b[33m"
+#define BLUE        "\x1b[34m"
+#define MAGENTA     "\x1b[35m"
+#define CYAN        "\x1b[36m"
+#define WHITE       "\x1b[37m"
+
+// Bright colors
+#define BRIGHT_BLACK   "\x1b[90m"
+#define BRIGHT_RED     "\x1b[91m"
+#define BRIGHT_GREEN   "\x1b[92m"
+#define BRIGHT_YELLOW  "\x1b[93m"
+#define BRIGHT_BLUE    "\x1b[94m"
+#define BRIGHT_MAGENTA "\x1b[95m"
+#define BRIGHT_CYAN    "\x1b[96m"
+#define BRIGHT_WHITE   "\x1b[97m"
+
+// Background colors
+#define BG_BLACK     "\x1b[40m"
+#define BG_RED       "\x1b[41m"
+#define BG_GREEN     "\x1b[42m"
+#define BG_YELLOW    "\x1b[43m"
+#define BG_BLUE      "\x1b[44m"
+#define BG_MAGENTA   "\x1b[45m"
+#define BG_CYAN      "\x1b[46m"
+#define BG_WHITE     "\x1b[47m"
+
+// Bright background colors
+#define BG_BRIGHT_BLACK   "\x1b[100m"
+#define BG_BRIGHT_RED     "\x1b[101m"
+#define BG_BRIGHT_GREEN   "\x1b[102m"
+#define BG_BRIGHT_YELLOW  "\x1b[103m"
+#define BG_BRIGHT_BLUE    "\x1b[104m"
+#define BG_BRIGHT_MAGENTA "\x1b[105m"
+#define BG_BRIGHT_CYAN    "\x1b[106m"
+#define BG_BRIGHT_WHITE   "\x1b[107m"
+
+// Styles
+#define BOLD        "\x1b[1m"
+#define DIM         "\x1b[2m"
+#define UNDERLINE   "\x1b[4m"
+#define BLINK       "\x1b[5m"
+#define REVERSE     "\x1b[7m"
+#define HIDDEN      "\x1b[8m"
+
+
 #define MAX_STACK_SIZE 1024
 #define MAX_LINE_SIZE 1024
 #define MAX_WORDS 1024
@@ -45,7 +97,8 @@ Word* Word_find(Word* dict[MAX_WORDS], const char* name){
 }
 void Word_insert(Word* dict[MAX_WORDS], Word* target){
     if(word_count >= MAX_WORDS){
-        fprintf(stderr, "ERROR: to many words in the dictionary\n");
+        fprintf(stderr, RED "ERROR: to many words in the dictionary\n" RESET);
+        Word_clear(dict);
         exit(1);
     }
     if(!Word_find(dict, target->name)){
@@ -68,7 +121,8 @@ size_t sp = 0;
 
 void push(Cell stack[MAX_STACK_SIZE], Cell value){
     if (sp >= MAX_STACK_SIZE) { 
-        fprintf(stderr, "ERROR: stack overflow\n"); 
+        fprintf(stderr, RED "ERROR: stack overflow\n" RESET); 
+        Word_clear(dict);
         exit(1); 
     }
     stack[sp++] = value;
@@ -76,7 +130,8 @@ void push(Cell stack[MAX_STACK_SIZE], Cell value){
 
 Cell pop(Cell stack[MAX_STACK_SIZE]){
     if (sp == 0) { 
-        fprintf(stderr, "ERROR: stack underflow\n"); 
+        fprintf(stderr, RED "ERROR: stack underflow\n" RESET); 
+        Word_clear(dict);
         exit(1); 
     }
     return stack[--sp];
@@ -161,6 +216,7 @@ void Code_dot(){
 
 void Code_exit(){
     Cell a = pop(stack);
+    Word_clear(dict);
     exit(a);
 }
 
@@ -205,7 +261,8 @@ void parser(const char* source, Word* dict[MAX_WORDS]){
             if (*end == '\0') {
                 push(stack, (Cell)val);
             } else {
-                fprintf(stderr, "ERROR: unknown word: `%s`\n", token);
+                fprintf(stderr, RED "ERROR: unknown word: `%s`\n" RESET, token);
+                Word_clear(dict);
                 exit(1);
             }
         }
@@ -223,7 +280,8 @@ int main(int argc, char* argv[]){
         const char* file_path = argv[1];
         FILE* input = fopen(file_path, "r");
         if(!input){
-            fprintf(stderr, "ERROR: failure to open the file `%s` dow to: %s\n", file_path, strerror(errno));
+            fprintf(stderr, RED "ERROR: failure to open the file `%s` dow to: `%s`\n" RESET, file_path, strerror(errno));
+            Word_clear(dict);
             return 1;
         }
         fread(source, sizeof(char), MAX_FILE_SIZE, input);
