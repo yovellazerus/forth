@@ -31,12 +31,13 @@ typedef struct Word_t {
     char* name;
     Code code;
     size_t patch;
+    Cell char_value;
 } Word;
 
 Word* dict[MAX_DICT_SIZE] = {0};
 size_t dict_size = 0;
 
-Word* Word_create(const char* name, Code code, size_t patch, Pos pos){
+Word* Word_create(const char* name, Code code, size_t patch, Pos pos, Cell char_value){
     Word* res = malloc(sizeof(*res));
     if(!res){
         return NULL;
@@ -45,7 +46,17 @@ Word* Word_create(const char* name, Code code, size_t patch, Pos pos){
     res->code = code;
     res->patch = patch;
     res->pos = pos;
+    res->char_value = char_value;
     return res;
+}
+
+void Word_dump(Word* word){
+    printf("(`%s`, %zu, %zu), 0x%x, `%s`",
+            word->pos.file, 
+            word->pos.row, 
+            word->pos.col,
+            (unsigned int)word->patch, 
+            word->name);
 }
 
 Word* Dict_find(Word* dict[MAX_DICT_SIZE], const char* name){
@@ -105,12 +116,7 @@ size_t ip = 0;
 
 void Program_dump(Word* program[MAX_PROGRAM_SIZE]){
     for(size_t i = 0; i < program_size; i++){
-        printf("0x%x: (`%s`, %zu, %zu), 0x%x, `%s`\n", (unsigned int)i,
-            program[i]->pos.file, 
-            program[i]->pos.col, 
-            program[i]->pos.row, 
-            (unsigned int)program[i]->patch, 
-            program[i]->name);
+       printf("0x%x: ", (unsigned int) i); Word_dump(program[i]); printf("\n");
     }
 }
 
@@ -160,9 +166,11 @@ void Code_dup(){
     Stack_push(stack, a);
     Stack_push(stack, a);
 }
+
 void Code_drop(){
     Stack_pop(stack);
 }
+
 void Code_swap(){
     Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
@@ -195,9 +203,11 @@ void Code_minus_rot(){
     Stack_push(stack, x1); 
     Stack_push(stack, x2); 
 }
+
 void Code_emit(){ 
     putchar(Stack_pop(stack)); 
 }
+
 void Code_cr(){ 
     putchar('\n'); 
 }
@@ -213,10 +223,14 @@ void Code_dot(){
 
 void Code_if(){
     Cell flag = Stack_pop(stack);
-    if(!flag){
+    if(flag == 0){
         size_t new_ip = program[ip]->patch;
         ip = new_ip;
     }
+}
+
+void Code_else(){
+
 }
 
 void Code_then(){
@@ -233,31 +247,32 @@ void Code_exit(){
 
 bool Dict_init_default(Word* dict[MAX_DICT_SIZE]){
     // Arithmetic
-    Dict_insert(dict, Word_create("+", Code_add, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("-", Code_sub, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("*", Code_mul, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("/", Code_div, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("%", Code_mod, 0, (Pos){0}));
+    Dict_insert(dict, Word_create("+", Code_add, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("-", Code_sub, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("*", Code_mul, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("/", Code_div, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("%", Code_mod, 0, (Pos){0}, 0));
 
     // Stack manipulation
-    Dict_insert(dict, Word_create("dup", Code_dup, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("drop", Code_drop, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("swap", Code_swap, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("over", Code_over, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("rot", Code_rot, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("-rot", Code_minus_rot, 0, (Pos){0}));
+    Dict_insert(dict, Word_create("dup", Code_dup, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("drop", Code_drop, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("swap", Code_swap, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("over", Code_over, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("rot", Code_rot, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("-rot", Code_minus_rot, 0, (Pos){0}, 0));
 
     // Output / I/O
-    Dict_insert(dict, Word_create(".", Code_dot, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("emit", Code_emit, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("cr", Code_cr, 0, (Pos){0}));
+    Dict_insert(dict, Word_create(".", Code_dot, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("emit", Code_emit, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("cr", Code_cr, 0, (Pos){0}, 0));
 
     // Control Flow
-    Dict_insert(dict, Word_create("if", Code_if, 0, (Pos){0}));
-    Dict_insert(dict, Word_create("then", Code_then, 0, (Pos){0}));
+    Dict_insert(dict, Word_create("if", Code_if, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("else", Code_else, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("then", Code_then, 0, (Pos){0}, 0));
 
     // System
-    Dict_insert(dict, Word_create("exit", Code_exit, 0, (Pos){0}));
+    Dict_insert(dict, Word_create("exit", Code_exit, 0, (Pos){0}, 0));
 
     for(size_t i = 0; i < dict_size; i++){
         if(!dict[i]){
@@ -272,13 +287,40 @@ bool Dict_init_default(Word* dict[MAX_DICT_SIZE]){
 size_t if_stack[MAX_IF_DEPTH] = {0};
 size_t if_stack_size = 0;
 
-bool parser(const char* source, Word* dict[MAX_DICT_SIZE], Word* program[MAX_PROGRAM_SIZE], const char* file_name){
-    char token[MAX_TOKEN_SIZE] = {'\0'};
-    Word* word = NULL;
+void Raw_words_clear(Word* raw_words[MAX_PROGRAM_SIZE]){
     size_t i = 0;
+    while (raw_words[i])
+    {
+        free(raw_words[i]->name);
+        free(raw_words[i]);
+        i++;
+    }
+}
 
+Cell escape_to_char(const char *s) {
+    if (s[0] == '\\') {
+        switch (s[1]) {
+            case 'n': return '\n';  // newline
+            case 's': return ' ';   // space,  TODO: this is my invention not ideal :)
+            case 't': return '\t';  // tab
+            case 'r': return '\r';  // carriage return
+            case '0': return '\0';  // null
+            case '\\': return '\\'; // backslash
+            case '\'': return '\''; // single quote
+            case '\"': return '\"'; // double quote
+            default: return s[1];   // unknown escape → just return the char
+        }
+    }
+    return s[0];  // not an escape → return literal character
+}
+
+bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* file_name){
+
+    size_t word_number = 0;
+    size_t i = 0;
     size_t col = 1;
     size_t row = 1;
+    Cell char_value = 0;
 
     while (source[i]) {
 
@@ -323,6 +365,11 @@ bool parser(const char* source, Word* dict[MAX_DICT_SIZE], Word* program[MAX_PRO
         }
 
         // build token
+        char* token = (char*)malloc(sizeof(*token) + 1);
+        if(!token){
+            fprintf(stderr, RED "ERROR: no memory\n" RESET);
+            return false;
+        }
         size_t j = 0;
         while (source[i] && !isspace((unsigned char)source[i]) && j < MAX_TOKEN_SIZE - 1) {
             col++;
@@ -330,9 +377,32 @@ bool parser(const char* source, Word* dict[MAX_DICT_SIZE], Word* program[MAX_PRO
         }
         token[j] = '\0';  // make sure token is null-terminated
 
+        // lex chars literals
+        if(token[0] == '\'' && token[strlen(token) - 1] == '\'' && (strlen(token) == 3 || strlen(token) == 4)){
+            if(strlen(token) == 3) char_value = (Cell)token[1];
+            else{
+                char_value = escape_to_char(token + 1);
+            }
+        }
+
         // build position
         Pos pos = {.file = file_name, .col = col, .row = row};
 
+        raw_words[word_number++] = Word_create(token, NULL, 0, pos, char_value);
+        if(!raw_words[word_number - 1]){
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool parser(Word* raw_words[MAX_PROGRAM_SIZE], Word* program[MAX_PROGRAM_SIZE], Word* dict[MAX_DICT_SIZE]){
+    Word* word = NULL;
+    size_t i = 0;
+
+    while(raw_words[i]){
+        const char* token = raw_words[i]->name;
         /*  lookup the token in the dict. 
             If not in the dict then it is a number literal.
             If is in the dict, check if it a Control Flow word, if not addend the word to the program.
@@ -358,11 +428,20 @@ bool parser(const char* source, Word* dict[MAX_DICT_SIZE], Word* program[MAX_PRO
                 program[patch]->patch = program_size; // fixing `if` patch
             }
             
-            program[program_size++] = Word_create(token, word->code, patch, pos);
+            program[program_size++] = Word_create(token, word->code, patch, raw_words[i]->pos, raw_words[i]->char_value);
+            if(!program[program_size - 1]){
+                fprintf(stderr, RED "ERROR: no memory\n" RESET);
+                return false;
+            }
     
         } else {
-            program[program_size++] = Word_create(token, NULL, patch, pos); // code==NULL indicate a number literal
+            program[program_size++] = Word_create(token, NULL, patch, raw_words[i]->pos, raw_words[i]->char_value); // code==NULL indicate a number literal
+            if(!program[program_size - 1]){
+                fprintf(stderr, RED "ERROR: no memory\n" RESET);
+                return false;
+            }
         }
+        i++;
     }
     return true;
 }
@@ -385,6 +464,9 @@ bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
             }
             if (*end == '\0') {
                 Stack_push(stack, (Cell)val);
+            }
+            else if(word->char_value != 0){
+                Stack_push(stack, word->char_value);
             } else { // not a number and not a known word sow run time error
                 fprintf(stderr, RED "RUNTIME ERROR: unknown word: `%s`\n" RESET, word->name);
                 return false;
@@ -398,6 +480,7 @@ bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
 int main(int argc, char* argv[]){
 
     char source[MAX_FILE_SIZE]; 
+    Word* raw_words[MAX_PROGRAM_SIZE] = {0};
 
     if(argc == 2){
         const char* file_path = argv[1];
@@ -419,24 +502,35 @@ int main(int argc, char* argv[]){
     if(!Dict_init_default(dict)){
         Dict_clear(dict);
         Program_clear(program);
+        Raw_words_clear(raw_words);
         return 1;
     }
 
-    if(!parser(source, dict, program, argv[1])){
+    if(!lexer(source, raw_words, argv[1])){
         Dict_clear(dict);
         Program_clear(program);
+        Raw_words_clear(raw_words);
         return 1;
     }
 
-    Program_dump(program);
+    if(!parser(raw_words, program, dict)){
+        Dict_clear(dict);
+        Program_clear(program);
+        Raw_words_clear(raw_words);
+        return 1;
+    }
+
+    // Program_dump(program);  // for debug
 
     if(!interpreter(program)){
         Dict_clear(dict);
         Program_clear(program);
+        Raw_words_clear(raw_words);
         return 1;
     }
 
     Dict_clear(dict);
     Program_clear(program);
+    Raw_words_clear(raw_words);
     return 0;
 }
