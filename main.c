@@ -220,8 +220,7 @@ void Code_if(){
 }
 
 void Code_then(){
-    size_t new_ip = program[ip]->patch;
-    ip = new_ip;
+    // no code here `then` is gust a place holder :)
 }
 
 // System:
@@ -368,7 +367,7 @@ bool parser(const char* source, Word* dict[MAX_DICT_SIZE], Word* program[MAX_PRO
     return true;
 }
 
-bool interpreter(Word* dict[MAX_DICT_SIZE], Word* program[MAX_PROGRAM_SIZE]){
+bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
     ip = 0;
     while(ip < program_size){
         Word* word = program[ip];
@@ -431,7 +430,7 @@ int main(int argc, char* argv[]){
 
     Program_dump(program);
 
-    if(!interpreter(dict, program)){
+    if(!interpreter(program)){
         Dict_clear(dict);
         Program_clear(program);
         return 1;
