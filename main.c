@@ -27,26 +27,30 @@ typedef struct Pos_t {
 } Pos;
 
 typedef struct Word_t {
-    Pos pos;
+    
     char* name;
     Code code;
+
+    Pos pos;
     size_t patch;
-    Cell char_value; // not used
+
+    size_t patch_if;
+    size_t patch_else;
+    size_t patch_then;
+
 } Word;
 
 Word* dict[MAX_DICT_SIZE] = {0};
 size_t dict_size = 0;
 
-Word* Word_create(const char* name, Code code, size_t patch, Pos pos, Cell char_value){
+Word* Word_create(const char* name, Code code, Pos pos){
     Word* res = malloc(sizeof(*res));
     if(!res){
         return NULL;
     }
     res->name = strdup(name);
     res->code = code;
-    res->patch = patch;
     res->pos = pos;
-    res->char_value = char_value;
     return res;
 }
 
@@ -230,12 +234,6 @@ void Code_dot(){
 
 // Control Flow:
 
-/*
-    if -> else    
-    else -> if
-    then -> else
-*/
-
 void Code_if(){
     Cell flag = Stack_pop(stack);
     if(flag == 0){
@@ -245,7 +243,7 @@ void Code_if(){
 }
 
 void Code_else(){
-    size_t new_ip = program[ip]->patch; // jump to `if` 
+    size_t new_ip = program[ip]->patch;
     ip = new_ip;
 }
 
@@ -263,32 +261,32 @@ void Code_exit(){
 
 bool Dict_init_default(Word* dict[MAX_DICT_SIZE]){
     // Arithmetic
-    Dict_insert(dict, Word_create("+", Code_add, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("-", Code_sub, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("*", Code_mul, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("/", Code_div, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("%", Code_mod, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("+", Code_add, (Pos){0}));
+    Dict_insert(dict, Word_create("-", Code_sub, (Pos){0}));
+    Dict_insert(dict, Word_create("*", Code_mul, (Pos){0}));
+    Dict_insert(dict, Word_create("/", Code_div, (Pos){0}));
+    Dict_insert(dict, Word_create("%", Code_mod, (Pos){0}));
 
     // Stack manipulation
-    Dict_insert(dict, Word_create("dup", Code_dup, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("drop", Code_drop, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("swap", Code_swap, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("over", Code_over, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("rot", Code_rot, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("-rot", Code_minus_rot, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("dup", Code_dup, (Pos){0}));
+    Dict_insert(dict, Word_create("drop", Code_drop, (Pos){0}));
+    Dict_insert(dict, Word_create("swap", Code_swap, (Pos){0}));
+    Dict_insert(dict, Word_create("over", Code_over, (Pos){0}));
+    Dict_insert(dict, Word_create("rot", Code_rot, (Pos){0}));
+    Dict_insert(dict, Word_create("-rot", Code_minus_rot, (Pos){0}));
 
     // Output / I/O
-    Dict_insert(dict, Word_create(".", Code_dot, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("emit", Code_emit, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("cr", Code_cr, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create(".", Code_dot, (Pos){0}));
+    Dict_insert(dict, Word_create("emit", Code_emit, (Pos){0}));
+    Dict_insert(dict, Word_create("cr", Code_cr, (Pos){0}));
 
     // Control Flow
-    Dict_insert(dict, Word_create("if", Code_if, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("else", Code_else, 0, (Pos){0}, 0));
-    Dict_insert(dict, Word_create("then", Code_then, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("if", Code_if, (Pos){0}));
+    Dict_insert(dict, Word_create("else", Code_else, (Pos){0}));
+    Dict_insert(dict, Word_create("then", Code_then, (Pos){0}));
 
     // System
-    Dict_insert(dict, Word_create("exit", Code_exit, 0, (Pos){0}, 0));
+    Dict_insert(dict, Word_create("exit", Code_exit, (Pos){0}));
 
     return true;
 }
@@ -388,7 +386,7 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
         }
         token[j] = '\0';  // make sure token is null-terminated
 
-        raw_words[word_number++] = Word_create(token, NULL, 0, pos, 0);
+        raw_words[word_number++] = Word_create(token, NULL, pos);
         if(!raw_words[word_number - 1]){
             return false;
         }
@@ -400,6 +398,7 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
 bool parser(Word* raw_words[MAX_PROGRAM_SIZE], Word* program[MAX_PROGRAM_SIZE], Word* dict[MAX_DICT_SIZE]){
     Word* word = NULL;
     size_t i = 0;
+    Word* bad_if = NULL;
 
     while(raw_words[i]){
         const char* token = raw_words[i]->name;
@@ -411,37 +410,63 @@ bool parser(Word* raw_words[MAX_PROGRAM_SIZE], Word* program[MAX_PROGRAM_SIZE], 
         */
         word = Dict_find(dict, token);
         size_t patch = 0;
+        /*
+            if -> else (or then)
+            else -> then
+            then -> 0 (or if)
+        */
         if (word) {
             if(word->code == Code_if){
+                bad_if = raw_words[i];
                 if_stack[if_stack_size++] = program_size;
                 if(if_stack_size >= MAX_IF_DEPTH){
-                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", word);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", raw_words[i]);
                     return false;
                 }
+            }
+            else if(word->code == Code_else){
+                if(if_stack_size == 0){
+                    ERROR("COMPILATION", "`else` missing `if` matches", raw_words[i]);
+                    return false;
+                }
+                patch = if_stack[--if_stack_size]; // geting `if` addr
+                program[patch]->patch = program_size; // fixing `if` patch
+                if(if_stack_size >= MAX_IF_DEPTH){
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", raw_words[i]);
+                    return false;
+                }
+                if_stack[if_stack_size++] = program_size; // leave `else`addr on stack for `then` to patch
             }
             else if(word->code == Code_then){
+                bad_if = NULL;
                 if(if_stack_size == 0){
-                    ERROR("COMPILATION", "`then` missing `if` matches", word);
+                    ERROR("COMPILATION", "`then` missing `if` matches", raw_words[i]);
                     return false;
                 }
-                patch = if_stack[--if_stack_size]; // fixing `then` patch
-                program[patch]->patch = program_size; // fixing `if` patch
+                patch = if_stack[--if_stack_size]; // geting `else` addr
+                program[patch]->patch = program_size; // fixing `else` patch to `then` addr
             }
             
-            program[program_size++] = Word_create(token, word->code, patch, raw_words[i]->pos, raw_words[i]->char_value);
+            program[program_size++] = Word_create(token, word->code, raw_words[i]->pos);
             if(!program[program_size - 1]){
-                ERROR("SYSTEM", "no memory", word);
+                ERROR("SYSTEM", "no memory", raw_words[i]);
                 return false;
             }
+            program[program_size - 1]->patch = patch;
     
         } else {
-            program[program_size++] = Word_create(token, NULL, patch, raw_words[i]->pos, raw_words[i]->char_value); // code==NULL indicate a number literal
+            program[program_size++] = Word_create(token, NULL, raw_words[i]->pos); // code==NULL indicate a number literal
             if(!program[program_size - 1]){
-                ERROR("SYSTEM", "no memory", word);
+                ERROR("SYSTEM", "no memory", raw_words[i]);
                 return false;
             }
+            program[program_size - 1]->patch = patch;
         }
         i++;
+    }
+    if(bad_if){
+        ERROR("COMPILATION", "`if` missing `then` matches", bad_if);
+        return false;
     }
     return true;
 }
