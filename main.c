@@ -32,7 +32,7 @@ typedef struct Pos_t
 
 typedef struct Word_t
 {
-    char *name;
+    const char *name;
     Code code;
     Pos pos;
     size_t patch;
@@ -82,7 +82,7 @@ void Dict_clear(Word *dict[MAX_DICT_SIZE])
 {
     for (size_t i = 0; i < dict_size; i++)
     {
-        free(dict[i]->name);
+        free((void*)dict[i]->name);
     }
     dict_size = 0;
 }
@@ -134,7 +134,7 @@ void Program_clear(Word *program[MAX_PROGRAM_SIZE])
 {
     for (size_t i = 0; i < program_size; i++)
     {
-        free(program[i]->name);
+        free((void*)program[i]->name);
     }
     program_size = 0;
 }
@@ -397,23 +397,23 @@ bool Dict_init_default(Word *dict[MAX_DICT_SIZE])
     Dict_insert(dict, Word_create("<=",     Code_lte,       (Pos){0}));
 
     // Stack manipulation
-    Dict_insert(dict, Word_create("dup", Code_dup, (Pos){0}));
-    Dict_insert(dict, Word_create("drop", Code_drop, (Pos){0}));
-    Dict_insert(dict, Word_create("swap", Code_swap, (Pos){0}));
-    Dict_insert(dict, Word_create("over", Code_over, (Pos){0}));
-    Dict_insert(dict, Word_create("rot", Code_rot, (Pos){0}));
-    Dict_insert(dict, Word_create("-rot", Code_minus_rot, (Pos){0}));
+    Dict_insert(dict, Word_create("dup",  Code_dup,         (Pos){0}));
+    Dict_insert(dict, Word_create("drop", Code_drop,        (Pos){0}));
+    Dict_insert(dict, Word_create("swap", Code_swap,        (Pos){0}));
+    Dict_insert(dict, Word_create("over", Code_over,        (Pos){0}));
+    Dict_insert(dict, Word_create("rot",  Code_rot,         (Pos){0}));
+    Dict_insert(dict, Word_create("-rot", Code_minus_rot,   (Pos){0}));
 
     // I/O
-    Dict_insert(dict, Word_create(".", Code_dot, (Pos){0}));
-    Dict_insert(dict, Word_create("emit", Code_emit, (Pos){0}));
-    Dict_insert(dict, Word_create("cr", Code_cr, (Pos){0}));
-    Dict_insert(dict, Word_create("key", Code_key, (Pos){0}));
+    Dict_insert(dict, Word_create(".",      Code_dot,    (Pos){0}));
+    Dict_insert(dict, Word_create("emit",   Code_emit,   (Pos){0}));
+    Dict_insert(dict, Word_create("cr",     Code_cr,     (Pos){0}));
+    Dict_insert(dict, Word_create("key",    Code_key,    (Pos){0}));
 
     // Control Flow
-    Dict_insert(dict, Word_create("if", Code_if, (Pos){0}));
-    Dict_insert(dict, Word_create("else", Code_else, (Pos){0}));
-    Dict_insert(dict, Word_create("then", Code_then, (Pos){0}));
+    Dict_insert(dict, Word_create("if",     Code_if,    (Pos){0}));
+    Dict_insert(dict, Word_create("else",   Code_else,  (Pos){0}));
+    Dict_insert(dict, Word_create("then",   Code_then,  (Pos){0}));
 
     // System
     Dict_insert(dict, Word_create("exit", Code_exit, (Pos){0}));
@@ -434,8 +434,8 @@ void Raw_words_clear(Word *raw_words[MAX_PROGRAM_SIZE])
     size_t i = 0;
     while (raw_words[i])
     {
-        free(raw_words[i]->name);
-        free(raw_words[i]);
+        free((void*)raw_words[i]->name);
+        free((void*)raw_words[i]);
         i++;
     }
 }
@@ -513,6 +513,10 @@ bool lexer(const char *source, Word *raw_words[MAX_PROGRAM_SIZE], const char *fi
         {
             while (source[i] && source[i] != ')')
             {
+                if(source[i] == '\n'){
+                    col = 1;
+                    row++;
+                }
                 col++;
                 i++;
             }
@@ -533,7 +537,7 @@ bool lexer(const char *source, Word *raw_words[MAX_PROGRAM_SIZE], const char *fi
         Pos pos = {.file = file_name, .col = col - 1, .row = row};
 
         // build token
-        char *token = (char *)malloc(sizeof(*token) + 1);
+        char *token = (char *)malloc(sizeof(*token) * (MAX_TOKEN_SIZE + 1));
         if (!token)
         {
             ERROR("SYSTEM", "no memory", NULL);
