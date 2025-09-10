@@ -31,7 +31,7 @@ typedef struct Word_t {
     char* name;
     Code code;
     size_t patch;
-    Cell char_value;
+    Cell char_value; // not used
 } Word;
 
 Word* dict[MAX_DICT_SIZE] = {0};
@@ -320,9 +320,13 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
     size_t i = 0;
     size_t col = 1;
     size_t row = 1;
-    Cell char_value = 0;
 
     while (source[i]) {
+
+        if(source[i] == '\n'){
+            row++;
+            col = 1;
+        }
 
         // skip whitespace
         while (isspace((unsigned char)source[i])) {
@@ -338,11 +342,6 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
         if (source[i] == '\\') {
             while (source[i] && source[i] != '\n'){
                 col++;
-                i++;
-            } 
-            if (source[i] == '\n'){
-                col = 1;
-                row++;
                 i++;
             } 
             continue;
@@ -364,6 +363,9 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
             break;
         }
 
+        // build position
+        Pos pos = {.file = file_name, .col = col - 1, .row = row};
+
         // build token
         char* token = (char*)malloc(sizeof(*token) + 1);
         if(!token){
@@ -377,18 +379,7 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
         }
         token[j] = '\0';  // make sure token is null-terminated
 
-        // lex chars literals
-        if(token[0] == '\'' && token[strlen(token) - 1] == '\'' && (strlen(token) == 3 || strlen(token) == 4)){
-            if(strlen(token) == 3) char_value = (Cell)token[1];
-            else{
-                char_value = escape_to_char(token + 1);
-            }
-        }
-
-        // build position
-        Pos pos = {.file = file_name, .col = col, .row = row};
-
-        raw_words[word_number++] = Word_create(token, NULL, 0, pos, char_value);
+        raw_words[word_number++] = Word_create(token, NULL, 0, pos, 0);
         if(!raw_words[word_number - 1]){
             return false;
         }
@@ -457,17 +448,23 @@ bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
             // try parse number
             char *end;
             errno = 0;
-            long val = strtol(word->name, &end, 0); // base==0 for auto-detect the base
+            long value = strtol(word->name, &end, 0); // base==0 for auto-detect the base
             if (errno == ERANGE) {
                 fprintf(stderr, RED "RUNTIME ERROR: number out of range: `%s`\n" RESET, word->name);
                 return false;
             }
+            // pushing a number to the stack
             if (*end == '\0') {
-                Stack_push(stack, (Cell)val);
+                Stack_push(stack, (Cell)value);
             }
-            else if(word->char_value != 0){
-                Stack_push(stack, word->char_value);
-            } else { // not a number and not a known word sow run time error
+            // pushing char literal
+            else if(word->name[0] == '\'' && word->name[strlen(word->name) - 1] == '\'' && (strlen(word->name) == 3 || strlen(word->name) == 4)){
+                if(strlen(word->name) == 3) Stack_push(stack, (Cell)word->name[1]);
+                else{
+                    Stack_push(stack, escape_to_char(word->name + 1));
+                }
+            }
+            else { // not a number and not a char literal and not a known word so run time error
                 fprintf(stderr, RED "RUNTIME ERROR: unknown word: `%s`\n" RESET, word->name);
                 return false;
             }
@@ -520,7 +517,7 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    // Program_dump(program);  // for debug
+    Program_dump(program);  // for debug
 
     if(!interpreter(program)){
         Dict_clear(dict);
