@@ -51,12 +51,13 @@ Word* Word_create(const char* name, Code code, size_t patch, Pos pos, Cell char_
 }
 
 void Word_dump(Word* word){
-    printf("(`%s`, %zu, %zu), 0x%x, `%s`",
+    if(word == NULL) return;
+    printf("word: `%s` pos: (`%s`, %zu, %zu)",
+            word->name,
             word->pos.file, 
             word->pos.row, 
-            word->pos.col,
-            (unsigned int)word->patch, 
-            word->name);
+            word->pos.col
+            );
 }
 
 Word* Dict_find(Word* dict[MAX_DICT_SIZE], const char* name){
@@ -75,9 +76,15 @@ void Dict_clear(Word* dict[MAX_DICT_SIZE]){
     dict_size = 0;
 }
 
+#define ERROR(prifix, msg, word) do {                                                       \
+    fprintf(stderr, RED prifix " ERROR: %s, from function: `%s` ", msg, __func__);          \
+    Word_dump(word);                                                                        \
+    fprintf(stderr, "\n" RESET);                                                            \
+} while(0)
+
 void Dict_insert(Word* dict[MAX_DICT_SIZE], Word* target){
     if(dict_size >= MAX_DICT_SIZE){
-        fprintf(stderr, RED "ERROR: to many words in the dictionary\n" RESET);
+        ERROR("SYSTEM", "to many words in the dictionary", target);
         Dict_clear(dict);
         exit(1);
     }
@@ -91,24 +98,6 @@ void Dict_insert(Word* dict[MAX_DICT_SIZE], Word* target){
 
 Cell stack[MAX_STACK_SIZE] = {0};
 size_t sp = 0;
-
-void Stack_push(Cell stack[MAX_STACK_SIZE], Cell value){
-    if (sp >= MAX_STACK_SIZE) { 
-        fprintf(stderr, RED "RUNTIME ERROR: stack overflow\n" RESET); 
-        Dict_clear(dict);
-        exit(1); 
-    }
-    stack[sp++] = value;
-}
-
-Cell Stack_pop(Cell stack[MAX_STACK_SIZE]){
-    if (sp == 0) { 
-        fprintf(stderr, RED "RUNTIME ERROR: stack underflow\n" RESET); 
-        Dict_clear(dict);
-        exit(1); 
-    }
-    return stack[--sp];
-}
 
 Word* program[MAX_PROGRAM_SIZE] = {0};
 size_t program_size = 0;
@@ -125,6 +114,26 @@ void Program_clear(Word* program[MAX_PROGRAM_SIZE]){
         free(program[i]->name);
     }
     program_size = 0;
+}
+
+void Stack_push(Cell stack[MAX_STACK_SIZE], Cell value){
+    if (sp >= MAX_STACK_SIZE) { 
+        ERROR("RUNTIME", "stack overflow", program[ip]); 
+        Dict_clear(dict);
+        Program_clear(program);
+        exit(1); 
+    }
+    stack[sp++] = value;
+}
+
+Cell Stack_pop(Cell stack[MAX_STACK_SIZE]){
+    if (sp == 0) { 
+        ERROR("RUNTIME", "stack underflow", program[ip]); 
+        Dict_clear(dict);
+        Program_clear(program);
+        exit(1); 
+    }
+    return stack[--sp];
 }
 
 // Arithmetic:
@@ -221,6 +230,12 @@ void Code_dot(){
 
 // Control Flow:
 
+/*
+    if -> else    
+    else -> if
+    then -> else
+*/
+
 void Code_if(){
     Cell flag = Stack_pop(stack);
     if(flag == 0){
@@ -230,7 +245,8 @@ void Code_if(){
 }
 
 void Code_else(){
-
+    size_t new_ip = program[ip]->patch; // jump to `if` 
+    ip = new_ip;
 }
 
 void Code_then(){
@@ -273,13 +289,6 @@ bool Dict_init_default(Word* dict[MAX_DICT_SIZE]){
 
     // System
     Dict_insert(dict, Word_create("exit", Code_exit, 0, (Pos){0}, 0));
-
-    for(size_t i = 0; i < dict_size; i++){
-        if(!dict[i]){
-            Dict_clear(dict);
-            return false;
-        }
-    }
 
     return true;
 }
@@ -369,7 +378,7 @@ bool lexer(const char* source, Word* raw_words[MAX_PROGRAM_SIZE], const char* fi
         // build token
         char* token = (char*)malloc(sizeof(*token) + 1);
         if(!token){
-            fprintf(stderr, RED "ERROR: no memory\n" RESET);
+            ERROR("SYSTEM", "no memory", NULL);
             return false;
         }
         size_t j = 0;
@@ -406,13 +415,13 @@ bool parser(Word* raw_words[MAX_PROGRAM_SIZE], Word* program[MAX_PROGRAM_SIZE], 
             if(word->code == Code_if){
                 if_stack[if_stack_size++] = program_size;
                 if(if_stack_size >= MAX_IF_DEPTH){
-                    fprintf(stderr, RED "COMTIME ERROR: maximum number of nested `if` blocks exceeded\n" RESET);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", word);
                     return false;
                 }
             }
             else if(word->code == Code_then){
                 if(if_stack_size == 0){
-                    fprintf(stderr, RED "COMTIME ERROR: `then` missing `if` matches\n" RESET);
+                    ERROR("COMPILATION", "`then` missing `if` matches", word);
                     return false;
                 }
                 patch = if_stack[--if_stack_size]; // fixing `then` patch
@@ -421,14 +430,14 @@ bool parser(Word* raw_words[MAX_PROGRAM_SIZE], Word* program[MAX_PROGRAM_SIZE], 
             
             program[program_size++] = Word_create(token, word->code, patch, raw_words[i]->pos, raw_words[i]->char_value);
             if(!program[program_size - 1]){
-                fprintf(stderr, RED "ERROR: no memory\n" RESET);
+                ERROR("SYSTEM", "no memory", word);
                 return false;
             }
     
         } else {
             program[program_size++] = Word_create(token, NULL, patch, raw_words[i]->pos, raw_words[i]->char_value); // code==NULL indicate a number literal
             if(!program[program_size - 1]){
-                fprintf(stderr, RED "ERROR: no memory\n" RESET);
+                ERROR("SYSTEM", "no memory", word);
                 return false;
             }
         }
@@ -450,7 +459,7 @@ bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
             errno = 0;
             long value = strtol(word->name, &end, 0); // base==0 for auto-detect the base
             if (errno == ERANGE) {
-                fprintf(stderr, RED "RUNTIME ERROR: number out of range: `%s`\n" RESET, word->name);
+                ERROR("RUNTIME", "number out of range", word);
                 return false;
             }
             // pushing a number to the stack
@@ -465,7 +474,7 @@ bool interpreter(Word* program[MAX_PROGRAM_SIZE]){
                 }
             }
             else { // not a number and not a char literal and not a known word so run time error
-                fprintf(stderr, RED "RUNTIME ERROR: unknown word: `%s`\n" RESET, word->name);
+                ERROR("RUNTIME", "unkown word", word);
                 return false;
             }
         }
@@ -478,9 +487,10 @@ int main(int argc, char* argv[]){
 
     char source[MAX_FILE_SIZE]; 
     Word* raw_words[MAX_PROGRAM_SIZE] = {0};
+    const char* file_path = NULL;
 
     if(argc == 2){
-        const char* file_path = argv[1];
+        file_path = argv[1];
         FILE* input = fopen(file_path, "r");
         if(!input){
             fprintf(stderr, RED "ERROR: failure to open the file `%s` due to: `%s`\n" RESET, file_path, strerror(errno));
@@ -503,7 +513,7 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    if(!lexer(source, raw_words, argv[1])){
+    if(!lexer(source, raw_words, file_path)){
         Dict_clear(dict);
         Program_clear(program);
         Raw_words_clear(raw_words);

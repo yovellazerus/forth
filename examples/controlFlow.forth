@@ -6,7 +6,7 @@ then
 0 if
     420 .
 then
-77 . cr
+77 . cr \ &
 
 
 1 if
