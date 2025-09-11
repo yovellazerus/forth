@@ -368,6 +368,24 @@ void Code_then()
     // no code here `then` is gust a place holder :)
 }
 
+/*
+    begin -> 0
+    while -> repeat
+    repeat -> begin
+*/
+
+void Code_begin(){
+
+}
+
+void Code_while(){
+
+}
+
+void Code_repeat(){
+
+}
+
 // System:
 
 void Code_exit()
@@ -411,9 +429,12 @@ bool Dict_init_default(Word *dict[MAX_DICT_SIZE])
     Dict_insert(dict, Word_create("key",    Code_key,    (Pos){0}));
 
     // Control Flow
-    Dict_insert(dict, Word_create("if",     Code_if,    (Pos){0}));
-    Dict_insert(dict, Word_create("else",   Code_else,  (Pos){0}));
-    Dict_insert(dict, Word_create("then",   Code_then,  (Pos){0}));
+    Dict_insert(dict, Word_create("if",      Code_if,      (Pos){0}));
+    Dict_insert(dict, Word_create("else",    Code_else,    (Pos){0}));
+    Dict_insert(dict, Word_create("then",    Code_then,    (Pos){0}));
+    Dict_insert(dict, Word_create("begin",   Code_begin,   (Pos){0}));
+    Dict_insert(dict, Word_create("while",   Code_while,   (Pos){0}));
+    Dict_insert(dict, Word_create("repeat",  Code_repeat,  (Pos){0}));
 
     // System
     Dict_insert(dict, Word_create("exit", Code_exit, (Pos){0}));
