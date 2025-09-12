@@ -9,12 +9,13 @@
 
 #include "ansi_colors.h"
 
-#define MAX_STACK_SIZE 1024
-#define MAX_DICT_SIZE 1024
-#define MAX_PROGRAM_SIZE 1024
-#define MAX_TOKEN_SIZE 32
-#define MAX_IF_DEPTH 1024
 #define MAX_FILE_SIZE (1ULL << 16)
+#define MAX_TOKEN_SIZE 32
+
+#define MAX_PROGRAM_SIZE (MAX_FILE_SIZE / MAX_TOKEN_SIZE)
+#define MAX_DICT_SIZE MAX_PROGRAM_SIZE
+#define MAX_STACK_SIZE 1024
+#define MAX_IF_DEPTH 1024
 
 #define TRUE 0xffffffff
 #define FALSE 0
@@ -32,7 +33,10 @@ typedef struct Pos_t
 
 typedef struct Word_t
 {
+    // better memory usage:
     // const char *name;
+    // size_t size;
+
     char name[MAX_TOKEN_SIZE];
     Code code;
     Pos pos;
@@ -376,7 +380,7 @@ void Code_exit()
     exit(a);
 }
 
-bool Dict_init_default(Word dict[MAX_DICT_SIZE])
+void Dict_init_default(Word dict[MAX_DICT_SIZE])
 {
     // Arithmetic
     Dict_insert(dict, "+", Code_add);
@@ -420,7 +424,6 @@ bool Dict_init_default(Word dict[MAX_DICT_SIZE])
     // System
     Dict_insert(dict, "exit", Code_exit);
 
-    return true;
 }
 
 size_t if_stack[MAX_IF_DEPTH] = {0};
@@ -508,7 +511,7 @@ int lexer(const char *source, Word raw_words[MAX_PROGRAM_SIZE], const char *file
                 i++;
             }
             if(source[i] == '\0'){
-                ERROR("COMPILATION", "unterminated comment", NULL);
+                ERROR("COMPILATION", "unterminated comment", &raw_words[word_number]);
                 return -1;
             }
             if (source[i] == ')')
@@ -527,13 +530,6 @@ int lexer(const char *source, Word raw_words[MAX_PROGRAM_SIZE], const char *file
         // build position
         Pos pos = {.file = file_name, .col = col - 1, .row = row};
 
-        // build token
-        // char *token = (char *)malloc(sizeof(*token) * (MAX_TOKEN_SIZE + 1));
-        // if (!token)
-        // {
-        //     ERROR("SYSTEM", "no memory", NULL);
-        //     return false;
-        // }
         size_t token_len = 0;
         while (source[i] && !isspace((unsigned char)source[i]) && token_len < MAX_TOKEN_SIZE - 1)
         {
@@ -553,7 +549,7 @@ int lexer(const char *source, Word raw_words[MAX_PROGRAM_SIZE], const char *file
         
         word_number++;
         if(word_number >= MAX_PROGRAM_SIZE){
-            ERROR("COMPILATION", "program is to long", NULL);
+            ERROR("COMPILATION", "program is to long", &raw_words[word_number - 1]);
             return -1;
         }
         memset(token, 0, token_len + 1);
@@ -562,7 +558,7 @@ int lexer(const char *source, Word raw_words[MAX_PROGRAM_SIZE], const char *file
     return word_number;
 }
 
-bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t number_of_words)
+bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t number_of_words)
 {
     Word *word = NULL;
     size_t i = 0;
@@ -571,7 +567,7 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
 
     while (i < number_of_words)
     {
-        memcpy(token, raw_words[i].name, strlen(raw_words[i].name) + 1);
+        memcpy(token, program[i].name, strlen(program[i].name) + 1);
         /*  lookup the token in the dict.
             If not in the dict then it is a number literal.
             If is in the dict, check if it a Control Flow word, if not addend the word to the program.
@@ -589,11 +585,11 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
         {
             if (word->code == Code_if)
             {
-                bad_if = &raw_words[i];
+                bad_if = &program[i];
                 if_stack[if_stack_size++] = program_size;
                 if (if_stack_size >= MAX_IF_DEPTH)
                 {
-                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &raw_words[i]);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &program[i]);
                     return false;
                 }
             }
@@ -601,14 +597,14 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
             {
                 if (if_stack_size == 0)
                 {
-                    ERROR("COMPILATION", "`else` missing `if` matches", &raw_words[i]);
+                    ERROR("COMPILATION", "`else` missing `if` matches", &program[i]);
                     return false;
                 }
                 patch = if_stack[--if_stack_size];    // geting `if` addr
                 program[patch].patch = program_size; // fixing `if` patch
                 if (if_stack_size >= MAX_IF_DEPTH)
                 {
-                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &raw_words[i]);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &program[i]);
                     return false;
                 }
                 if_stack[if_stack_size++] = program_size; // leave `else`addr on stack for `then` to patch
@@ -618,7 +614,7 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
                 bad_if = NULL;
                 if (if_stack_size == 0)
                 {
-                    ERROR("COMPILATION", "`then` missing `if` matches", &raw_words[i]);
+                    ERROR("COMPILATION", "`then` missing `if` matches", &program[i]);
                     return false;
                 }
                 patch = if_stack[--if_stack_size];    // geting `else` addr
@@ -627,7 +623,7 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
 
             program[program_size].code = word->code;
             program[program_size].patch = patch;
-            program[program_size].pos = raw_words[i].pos;
+            program[program_size].pos = program[i].pos;
             memcpy(program[program_size].name, token, strlen(token) + 1);
 
             program_size++;
@@ -636,7 +632,7 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
         {
             program[program_size].code = NULL; // code==NULL indicate a number literal
             program[program_size].patch = patch;
-            program[program_size].pos = raw_words[i].pos;
+            program[program_size].pos = program[i].pos;
             memcpy(program[program_size].name, token, strlen(token) + 1);
 
             program_size++;
@@ -651,7 +647,7 @@ bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Wo
     return true;
 }
 
-bool interpreter(Word program[MAX_PROGRAM_SIZE])
+bool interpret(Word program[MAX_PROGRAM_SIZE])
 {
     ip = 0;
     while (ip < program_size)
@@ -698,52 +694,81 @@ bool interpreter(Word program[MAX_PROGRAM_SIZE])
     return true;
 }
 
+const char* argv_shift(int* argc, char** argv){
+    if(*argc == 0) return NULL;
+    const char* first = argv[0];
+    for(int i = 0; i < *argc - 1; i++){
+        argv[i] = argv[i + 1];
+    }
+    argv[*argc - 1] = NULL; // keep NULL at the end
+    (*argc)--;
+    return first;
+}
+
 int main(int argc, char *argv[])
 {
+    // while(argc){
+    //     argv_shift(&argc, argv);
+    //     for(int i = 0; i < argc; i++){
+    //         printf("[%d] = %s\n", i, argv[i]);
+    //     }
+    //     printf("\n");
+    // }
+    // return 0;
 
     char source[MAX_FILE_SIZE] = {0};
-    Word raw_words[MAX_PROGRAM_SIZE] = {0};
-    const char *file_path = NULL;
+    bool dprog = false;
+    bool ddict = false;
 
-    if (argc == 2)
-    {
-        file_path = argv[1];
-        FILE *input = fopen(file_path, "r");
-        if (!input)
-        {
-            fprintf(stderr, RED "ERROR: failure to open the file `%s` due to: `%s`\n" RESET, file_path, strerror(errno));
-            return 1;
+    const char *c_prog_name = argv_shift(&argc, argv);
+
+    const char* file_path = NULL;
+    while(argc){
+        // flags:
+        file_path = argv_shift(&argc, argv);
+        if(strcmp(file_path, "-dprog") == 0){
+            dprog = true;
         }
-        size_t file_size = fread(source, sizeof(char), MAX_FILE_SIZE, input);
-        source[file_size] = '\0';
-        fclose(input);
+        else if(strcmp(file_path, "-ddict") == 0){
+            ddict = true;
+        }
+        // file name:
+        else{
+            FILE *input = fopen(file_path, "r");
+            if (!input)
+            {
+                fprintf(stderr, RED "ERROR: failure to open the file `%s` due to: `%s`\n" RESET, file_path, strerror(errno));
+                return 1;
+            }
+            size_t file_size = fread(source, sizeof(char), MAX_FILE_SIZE, input);
+            source[file_size] = '\0';
+            fclose(input);
+        }
+        
     }
-    else
-    {
-        fprintf(stderr, RED "USAGE: forth <input_file>.forth\n" RESET);
+    if(!file_path){
+        fprintf(stderr, RED "USAGE: %s [-dprog] [-ddict] <input_file>.forth\n" RESET, c_prog_name);
         fprintf(stderr, RED "ERROR: missing input file\n" RESET);
         return 1;
     }
 
-    if (!Dict_init_default(dict))
-    {
-        return 1;
-    }
+    Dict_init_default(dict);
 
-    int word_number = lexer(source, raw_words, file_path); // int for error detection
+    int word_number = lexer(source, program, file_path); // int for error detection
     if(word_number < 0){
         return 1;
     }
 
-    if (!parser(raw_words, program, dict, (size_t)word_number))
+    if (!parser(program, dict, (size_t)word_number))
     {
         return 1;
     }
 
-    Program_dump(program); // for debug
-    Dict_dump(dict);
+    // for debug
+    if(dprog) Program_dump(program); 
+    if(ddict) Dict_dump(dict);
 
-    if (!interpreter(program))
+    if (!interpret(program))
     {
         return 1;
     }
