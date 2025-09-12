@@ -707,15 +707,6 @@ const char* argv_shift(int* argc, char** argv){
 
 int main(int argc, char *argv[])
 {
-    // while(argc){
-    //     argv_shift(&argc, argv);
-    //     for(int i = 0; i < argc; i++){
-    //         printf("[%d] = %s\n", i, argv[i]);
-    //     }
-    //     printf("\n");
-    // }
-    // return 0;
-
     char source[MAX_FILE_SIZE] = {0};
     bool dprog = false;
     bool ddict = false;
@@ -753,25 +744,13 @@ int main(int argc, char *argv[])
     }
 
     Dict_init_default(dict);
-
     int word_number = lexer(source, program, file_path); // int for error detection
-    if(word_number < 0){
-        return 1;
-    }
-
-    if (!parser(program, dict, (size_t)word_number))
-    {
-        return 1;
-    }
-
+    if(word_number < 0) return 1;
+    if (!parser(program, dict, (size_t)word_number)) return 1;
     // for debug
     if(dprog) Program_dump(program); 
     if(ddict) Dict_dump(dict);
-
-    if (!interpret(program))
-    {
-        return 1;
-    }
+    if (!interpret(program)) return 1;
 
     return 0;
 }
