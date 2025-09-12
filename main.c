@@ -647,7 +647,7 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
     return true;
 }
 
-bool interpret(Word program[MAX_PROGRAM_SIZE])
+bool interpreter(Word program[MAX_PROGRAM_SIZE])
 {
     ip = 0;
     while (ip < program_size)
@@ -750,7 +750,7 @@ int main(int argc, char *argv[])
     // for debug
     if(dprog) Program_dump(program); 
     if(ddict) Dict_dump(dict);
-    if (!interpret(program)) return 1;
+    if (!interpreter(program)) return 1;
 
     return 0;
 }
