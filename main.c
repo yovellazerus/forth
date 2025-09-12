@@ -17,6 +17,7 @@
 #define MAX_STACK_SIZE 1024
 #define MAX_IF_DEPTH 1024
 #define MAX_WHILE_DEPTH 1024
+#define MAX_COLON_DEPTH 1024
 
 #define TRUE 0xffffffff
 #define FALSE 0
@@ -60,6 +61,9 @@ size_t if_stack_size = 0;
 
 size_t while_stack[MAX_WHILE_DEPTH] = {0};
 size_t while_stack_size = 0;
+
+size_t call_stack[MAX_COLON_DEPTH] = {0};
+size_t call_stack_size = 0;
 
 void Word_dump(Word *word)
 {
@@ -310,8 +314,6 @@ void Code_rot()
     Stack_push(stack, x2);
     Stack_push(stack, x3);
     Stack_push(stack, x1);
-
-    
 }
 
 void Code_minus_rot()
@@ -388,6 +390,14 @@ void Code_repeat(){
     ip = new_ip;
 }
 
+void Code_colon(){
+
+}
+
+void Code_semi_colon(){
+    
+}
+
 // System:
 
 void Code_exit()
@@ -430,12 +440,14 @@ void Dict_init_default(Word dict[MAX_DICT_SIZE])
     Dict_insert(dict, "key",    Code_key );
 
     // Control Flow
-    Dict_insert(dict, "if",      Code_if    );
-    Dict_insert(dict, "else",    Code_else  );
-    Dict_insert(dict, "then",    Code_then  );
-    Dict_insert(dict, "begin",   Code_begin );
-    Dict_insert(dict, "while",   Code_while );
-    Dict_insert(dict, "repeat",  Code_repeat);
+    Dict_insert(dict, "if",      Code_if        );
+    Dict_insert(dict, "else",    Code_else      );
+    Dict_insert(dict, "then",    Code_then      );
+    Dict_insert(dict, "begin",   Code_begin     );
+    Dict_insert(dict, "while",   Code_while     );
+    Dict_insert(dict, "repeat",  Code_repeat    );
+    Dict_insert(dict, ":",       Code_colon     );
+    Dict_insert(dict, ";",       Code_semi_colon);
 
     // System
     Dict_insert(dict, "exit", Code_exit);
@@ -578,25 +590,50 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
     Word *bad_if = NULL;
     Word *bad_while = NULL;
     char token[MAX_TOKEN_SIZE];
+    size_t patch = 0;
+    int in_colon_index = -1;
+    Word* new_word = NULL;
 
     while (i < number_of_words)
     {
         memcpy(token, program[i].name, strlen(program[i].name) + 1);
-        /*  lookup the token in the dict.
-            If not in the dict then it is a number literal.
-            If is in the dict, check if it a Control Flow word, if not addend the word to the program.
-            IF it is a Control Flow word, then patch the jump address.
-            TODO: make it in to a separate sub routine.
-        */
         word = Dict_find(dict, token);
-        size_t patch = 0;
-        /*
-            if -> else (or then)
-            else -> then
-            then -> 0 (or if)
-        */
+
+        if(in_colon_index > 0){
+            // pares the new name
+            if(in_colon_index == 0){
+                if(Dict_find(dict, token)){
+                    ERROR("COMPILATION", "word already exists in the dictionary", word);
+                    return false;
+                }
+                Dict_insert(dict, token, NULL);
+                new_word = word;
+                continue;
+            }
+            if(in_colon_index == 1){
+                new_word->patch = program_size;
+                new_word = NULL;
+            }
+            // forbidden nested `:`
+            if(word->code == Code_colon){
+                ERROR("COMPILATION", "nested `:` are forbidden", word);
+                return false;
+            }
+            // end `:` def
+            if(word->code == Code_semi_colon){
+                in_colon_index = -1;
+                continue;
+            }
+            in_colon_index++;
+        }
+        
         if (word)
         {
+            /*
+                if -> else (or then)
+                else -> then
+                then -> 0 (or if)
+            */
             if (word->code == Code_if)
             {
                 bad_if = &program[i];
@@ -640,13 +677,6 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
                 while -> repeat
                 repeat -> begin
             */
-
-            /*
-                begin -> 0
-                while -> begin
-                repeat -> while
-            */
-
             else if(word->code == Code_begin){
                 bad_while = &program[i];
                 while_stack[while_stack_size++] = program_size;
@@ -679,7 +709,6 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
                 }
                 patch = while_stack[--while_stack_size];
 
-                // 
                 size_t while_addr = patch;
                 size_t begin_addr = program[while_addr].patch;
                 program[program_size].patch = program[while_addr].patch;
@@ -687,11 +716,14 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
                 patch = begin_addr;
             }
 
+            else if(word->code == Code_colon){
+                in_colon_index = 0;
+            }
+
             program[program_size].code = word->code;
             program[program_size].patch = patch;
             program[program_size].pos = program[i].pos;
             memcpy(program[program_size].name, token, strlen(token) + 1);
-
             program_size++;
         }
         else
@@ -726,6 +758,21 @@ bool interpreter(Word program[MAX_PROGRAM_SIZE])
         Word *word = &program[ip];
         if (word->code)
         {
+            if(word->code == Code_colon){
+                call_stack[call_stack_size++] = ip;
+                if(call_stack_size >= MAX_COLON_DEPTH){
+                    ERROR("RUNTIME", "max function call exceeded", word);
+                    return false;
+                }
+                ip = word->patch;
+            }
+            if(word->code == Code_semi_colon){
+                if(call_stack_size == MAX_COLON_DEPTH){
+                    ERROR("RUNTIME", "`;` with no maching `:`", word);
+                    return false;
+                }
+                ip = call_stack[--call_stack_size];
+            }
             word->code();
         }
         else
