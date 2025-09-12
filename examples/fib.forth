@@ -1,13 +1,15 @@
-\ Initialize first two Fibonacci numbers
-0 1 20  \ stack: F0 F1 count
+\ Print the first 20 Fibonacci numbers
+
+20            \ counter
+1 1           \ F0 F1
 
 begin
-    dup 0 >      \ check if count > 0
+    dup 0 >           \ check if counter > 0
 while
-    over .       \ print the current number (top of stack)
-    over over +  \ compute next Fibonacci number: F(n-1) + F(n-2)
-    rot drop     \ drop the oldest number, keep last two
-    1-           \ decrement the counter
+    over . cr         \ print F0
+    over over +       \ compute next Fibonacci (F0+F1)
+    rot drop          \ drop old F0, leave F1 next
+    swap 1 - swap     \ decrement counter without disturbing F1/next order
 repeat
 
-drop drop       \ clean up remaining numbers from the stack
+drop drop drop        \ clean up remaining F0 F1 counter

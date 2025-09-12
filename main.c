@@ -16,6 +16,7 @@
 #define MAX_DICT_SIZE MAX_PROGRAM_SIZE
 #define MAX_STACK_SIZE 1024
 #define MAX_IF_DEPTH 1024
+#define MAX_WHILE_DEPTH 1024
 
 #define TRUE 0xffffffff
 #define FALSE 0
@@ -47,15 +48,29 @@ typedef struct Word_t
 Word dict[MAX_DICT_SIZE] = {0};
 size_t dict_size = 0;
 
+Cell stack[MAX_STACK_SIZE] = {0};
+size_t stack_size = 0;
+
+Word program[MAX_PROGRAM_SIZE] = {0};
+size_t program_size = 0;
+size_t ip = 0;
+
+size_t if_stack[MAX_IF_DEPTH] = {0};
+size_t if_stack_size = 0;
+
+size_t while_stack[MAX_WHILE_DEPTH] = {0};
+size_t while_stack_size = 0;
+
 void Word_dump(Word *word)
 {
     if (word == NULL)
         return;
-    printf("word: `%s` pos: (`%s`, %zu, %zu)",
+    printf("word: `%s` pos: (`%s`, %zu, %zu) patch: 0x%x",
            word->name,
            word->pos.file,
            word->pos.row,
-           word->pos.col);
+           word->pos.col,
+           (unsigned int)word->patch);
 }
 
 Word *Dict_find(Word dict[MAX_DICT_SIZE], const char *name)
@@ -112,13 +127,6 @@ void Dict_insert(Word dict[MAX_DICT_SIZE], const char* name, Code code)
     dict_size++;
 }
 
-Cell stack[MAX_STACK_SIZE] = {0};
-size_t sp = 0;
-
-Word program[MAX_PROGRAM_SIZE] = {0};
-size_t program_size = 0;
-size_t ip = 0;
-
 void Program_dump(Word program[MAX_PROGRAM_SIZE])
 {
     for (size_t i = 0; i < program_size; i++)
@@ -131,22 +139,32 @@ void Program_dump(Word program[MAX_PROGRAM_SIZE])
 
 void Stack_push(Cell stack[MAX_STACK_SIZE], Cell value)
 {
-    if (sp >= MAX_STACK_SIZE)
+    if (stack_size >= MAX_STACK_SIZE)
     {
         ERROR("RUNTIME", "stack overflow", &program[ip]);
         exit(1);
     }
-    stack[sp++] = value;
+    stack[stack_size++] = value;
 }
 
 Cell Stack_pop(Cell stack[MAX_STACK_SIZE])
 {
-    if (sp == 0)
+    if (stack_size == 0)
     {
         ERROR("RUNTIME", "stack underflow", &program[ip]);
         exit(1);
     }
-    return stack[--sp];
+    return stack[--stack_size];
+}
+
+Cell Stack_peek(Cell stack[MAX_STACK_SIZE], size_t index)
+{
+    if (index == 0 || index > stack_size)
+    {
+        ERROR("RUNTIME", "stack underflow", &program[ip]);
+        exit(1);
+    }
+    return stack[stack_size - index];
 }
 
 // Arithmetic:
@@ -217,7 +235,7 @@ void Code_not_cmp(){
 void Code_lt(){
     Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
-    if(a < b){
+    if(a > b){
         Stack_push(stack, TRUE);
     }
     else{
@@ -227,7 +245,7 @@ void Code_lt(){
 void Code_gt(){
     Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
-    if(a > b){
+    if(a < b){
         Stack_push(stack, TRUE);
     }
     else{
@@ -238,7 +256,7 @@ void Code_gt(){
 void Code_gte(){
     Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
-    if(a >= b){
+    if(a <= b){
         Stack_push(stack, TRUE);
     }
     else{
@@ -248,7 +266,7 @@ void Code_gte(){
 void Code_lte(){
     Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
-    if(a <= b){
+    if(a >= b){
         Stack_push(stack, TRUE);
     }
     else{
@@ -272,19 +290,16 @@ void Code_drop()
 
 void Code_swap()
 {
-    Cell a = Stack_pop(stack);
     Cell b = Stack_pop(stack);
+    Cell a = Stack_pop(stack);
     Stack_push(stack, b);
     Stack_push(stack, a);
 }
 
 void Code_over()
 {
-    Cell a = Stack_pop(stack);
-    Cell b = Stack_pop(stack);
-    Stack_push(stack, b);
+    Cell a = Stack_peek(stack, 2);
     Stack_push(stack, a);
-    Stack_push(stack, b);
 }
 
 void Code_rot()
@@ -295,6 +310,8 @@ void Code_rot()
     Stack_push(stack, x2);
     Stack_push(stack, x3);
     Stack_push(stack, x1);
+
+    
 }
 
 void Code_minus_rot()
@@ -322,7 +339,7 @@ void Code_cr()
 void Code_dot()
 {
     Cell a = Stack_pop(stack);
-    printf("%d\n", a);
+    printf("%d", a);
 }
 
 void Code_key()
@@ -354,22 +371,21 @@ void Code_then()
     // no code here `then` is gust a place holder :)
 }
 
-/*
-    begin -> 0
-    while -> repeat
-    repeat -> begin
-*/
-
 void Code_begin(){
-
+    // no code here `begin` is gust a place holder :)
 }
 
 void Code_while(){
-
+    Cell flag = Stack_pop(stack);
+    if(flag == 0){
+        size_t new_ip = program[ip].patch;
+        ip = new_ip + 1;
+    }
 }
 
 void Code_repeat(){
-
+    size_t new_ip = program[ip].patch;
+    ip = new_ip;
 }
 
 // System:
@@ -425,9 +441,6 @@ void Dict_init_default(Word dict[MAX_DICT_SIZE])
     Dict_insert(dict, "exit", Code_exit);
 
 }
-
-size_t if_stack[MAX_IF_DEPTH] = {0};
-size_t if_stack_size = 0;
 
 Cell escape_to_char(const char *s)
 {
@@ -563,6 +576,7 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
     Word *word = NULL;
     size_t i = 0;
     Word *bad_if = NULL;
+    Word *bad_while = NULL;
     char token[MAX_TOKEN_SIZE];
 
     while (i < number_of_words)
@@ -621,6 +635,58 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
                 program[patch].patch = program_size; // fixing `else` patch to `then` addr
             }
 
+            /*
+                begin -> 0
+                while -> repeat
+                repeat -> begin
+            */
+
+            /*
+                begin -> 0
+                while -> begin
+                repeat -> while
+            */
+
+            else if(word->code == Code_begin){
+                bad_while = &program[i];
+                while_stack[while_stack_size++] = program_size;
+                if (while_stack_size >= MAX_WHILE_DEPTH)
+                {
+                    ERROR("COMPILATION", "maximum number of nested `while` blocks exceeded", &program[i]);
+                    return false;
+                }
+            }
+            else if(word->code == Code_while){
+                if (while_stack_size == 0)
+                {
+                    ERROR("COMPILATION", "`while` missing `begin` matches", &program[i]);
+                    return false;
+                }
+                patch = while_stack[--while_stack_size];
+                while_stack[while_stack_size++] = program_size;
+                if (while_stack_size >= MAX_WHILE_DEPTH)
+                {
+                    ERROR("COMPILATION", "maximum number of nested `while` blocks exceeded", &program[i]);
+                    return false;
+                }
+            }
+            else if(word->code == Code_repeat){
+                bad_while = NULL;
+                if (while_stack_size == 0)
+                {
+                    ERROR("COMPILATION", "`repeat` missing `while` matches", &program[i]);
+                    return false;
+                }
+                patch = while_stack[--while_stack_size];
+
+                // 
+                size_t while_addr = patch;
+                size_t begin_addr = program[while_addr].patch;
+                program[program_size].patch = program[while_addr].patch;
+                program[while_addr].patch = program_size;
+                patch = begin_addr;
+            }
+
             program[program_size].code = word->code;
             program[program_size].patch = patch;
             program[program_size].pos = program[i].pos;
@@ -642,6 +708,11 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
     if (bad_if)
     {
         ERROR("COMPILATION", "`if` missing `then` matches", bad_if);
+        return false;
+    }
+    if (bad_while)
+    {
+        ERROR("COMPILATION", "`begin` missing `repeat` matches", bad_while);
         return false;
     }
     return true;
@@ -700,7 +771,7 @@ const char* argv_shift(int* argc, char** argv){
     for(int i = 0; i < *argc - 1; i++){
         argv[i] = argv[i + 1];
     }
-    argv[*argc - 1] = NULL; // keep NULL at the end
+    argv[*argc - 1] = NULL;
     (*argc)--;
     return first;
 }
