@@ -32,28 +32,16 @@ typedef struct Pos_t
 
 typedef struct Word_t
 {
-    const char *name;
+    // const char *name;
+    char name[MAX_TOKEN_SIZE];
     Code code;
     Pos pos;
     size_t patch;
 
 } Word;
 
-Word *dict[MAX_DICT_SIZE] = {0};
+Word dict[MAX_DICT_SIZE] = {0};
 size_t dict_size = 0;
-
-Word *Word_create(const char *name, Code code, Pos pos)
-{
-    Word *res = malloc(sizeof(*res));
-    if (!res)
-    {
-        return NULL;
-    }
-    res->name = strdup(name);
-    res->code = code;
-    res->pos = pos;
-    return res;
-}
 
 void Word_dump(Word *word)
 {
@@ -66,25 +54,29 @@ void Word_dump(Word *word)
            word->pos.col);
 }
 
-Word *Dict_find(Word *dict[MAX_DICT_SIZE], const char *name)
+Word *Dict_find(Word dict[MAX_DICT_SIZE], const char *name)
 {
     for (size_t i = 0; i < dict_size; i++)
     {
-        if (strcmp(dict[i]->name, name) == 0)
+        if (strcmp(dict[i].name, name) == 0)
         {
-            return dict[i];
+            return &dict[i];
         }
     }
     return NULL;
 }
 
-void Dict_clear(Word *dict[MAX_DICT_SIZE])
-{
+void Dict_dump(Word dict[MAX_DICT_SIZE]){
+    printf("dict size: %zu, dict:\n", dict_size);
+    printf("{");
     for (size_t i = 0; i < dict_size; i++)
     {
-        free((void*)dict[i]->name);
+        if(i > 0) printf(", `%s`", dict[i].name);
+        else{
+            printf("`%s`", dict[i].name);
+        }
     }
-    dict_size = 0;
+    printf("}\n");
 }
 
 #define ERROR(prifix, msg, word)                                                       \
@@ -95,57 +87,49 @@ void Dict_clear(Word *dict[MAX_DICT_SIZE])
         fprintf(stderr, "\n" RESET);                                                   \
     } while (0)
 
-void Dict_insert(Word *dict[MAX_DICT_SIZE], Word *target)
+void Dict_insert(Word dict[MAX_DICT_SIZE], const char* name, Code code)
 {
+    Word target = {.code = code};
+    memcpy(target.name, name, strlen(name) + 1);
     if (dict_size >= MAX_DICT_SIZE)
     {
-        ERROR("SYSTEM", "to many words in the dictionary", target);
-        Dict_clear(dict);
+        ERROR("SYSTEM", "to many words in the dictionary", &target);
         exit(1);
     }
-    if (!Dict_find(dict, target->name))
+    if (!Dict_find(dict, target.name))
     {
-        dict[dict_size++] = target;
+        memcpy(dict[dict_size].name, target.name, strlen(target.name) + 1);
+        dict[dict_size].code = target.code;
     }
     else
     {
         return;
     }
+    dict_size++;
 }
 
 Cell stack[MAX_STACK_SIZE] = {0};
 size_t sp = 0;
 
-Word *program[MAX_PROGRAM_SIZE] = {0};
+Word program[MAX_PROGRAM_SIZE] = {0};
 size_t program_size = 0;
 size_t ip = 0;
 
-void Program_dump(Word *program[MAX_PROGRAM_SIZE])
+void Program_dump(Word program[MAX_PROGRAM_SIZE])
 {
     for (size_t i = 0; i < program_size; i++)
     {
         printf("0x%x: ", (unsigned int)i);
-        Word_dump(program[i]);
+        Word_dump(&program[i]);
         printf("\n");
     }
-}
-
-void Program_clear(Word *program[MAX_PROGRAM_SIZE])
-{
-    for (size_t i = 0; i < program_size; i++)
-    {
-        free((void*)program[i]->name);
-    }
-    program_size = 0;
 }
 
 void Stack_push(Cell stack[MAX_STACK_SIZE], Cell value)
 {
     if (sp >= MAX_STACK_SIZE)
     {
-        ERROR("RUNTIME", "stack overflow", program[ip]);
-        Dict_clear(dict);
-        Program_clear(program);
+        ERROR("RUNTIME", "stack overflow", &program[ip]);
         exit(1);
     }
     stack[sp++] = value;
@@ -155,9 +139,7 @@ Cell Stack_pop(Cell stack[MAX_STACK_SIZE])
 {
     if (sp == 0)
     {
-        ERROR("RUNTIME", "stack underflow", program[ip]);
-        Dict_clear(dict);
-        Program_clear(program);
+        ERROR("RUNTIME", "stack underflow", &program[ip]);
         exit(1);
     }
     return stack[--sp];
@@ -352,14 +334,14 @@ void Code_if()
     Cell flag = Stack_pop(stack);
     if (flag == 0)
     {
-        size_t new_ip = program[ip]->patch;
+        size_t new_ip = program[ip].patch;
         ip = new_ip;
     }
 }
 
 void Code_else()
 {
-    size_t new_ip = program[ip]->patch;
+    size_t new_ip = program[ip].patch;
     ip = new_ip;
 }
 
@@ -391,75 +373,58 @@ void Code_repeat(){
 void Code_exit()
 {
     Cell a = Stack_pop(stack);
-    Dict_clear(dict);
     exit(a);
 }
 
-bool Dict_init_default(Word *dict[MAX_DICT_SIZE])
+bool Dict_init_default(Word dict[MAX_DICT_SIZE])
 {
     // Arithmetic
-    Dict_insert(dict, Word_create("+", Code_add, (Pos){0}));
-    Dict_insert(dict, Word_create("-", Code_sub, (Pos){0}));
-    Dict_insert(dict, Word_create("*", Code_mul, (Pos){0}));
-    Dict_insert(dict, Word_create("/", Code_div, (Pos){0}));
-    Dict_insert(dict, Word_create("%", Code_mod, (Pos){0}));
+    Dict_insert(dict, "+", Code_add);
+    Dict_insert(dict, "-", Code_sub);
+    Dict_insert(dict, "*", Code_mul);
+    Dict_insert(dict, "/", Code_div);
+    Dict_insert(dict, "%", Code_mod);
 
     // Logic
-    Dict_insert(dict, Word_create("true",   Code_true,      (Pos){0}));
-    Dict_insert(dict, Word_create("false",  Code_false,     (Pos){0}));
-    Dict_insert(dict, Word_create("==",     Code_cmp,       (Pos){0}));
-    Dict_insert(dict, Word_create("!=",     Code_not_cmp,   (Pos){0}));
-    Dict_insert(dict, Word_create("<",      Code_lt,        (Pos){0}));
-    Dict_insert(dict, Word_create(">",      Code_gt,        (Pos){0}));
-    Dict_insert(dict, Word_create(">=",     Code_gte,       (Pos){0}));
-    Dict_insert(dict, Word_create("<=",     Code_lte,       (Pos){0}));
+    Dict_insert(dict, "true",   Code_true   );
+    Dict_insert(dict, "false",  Code_false  );
+    Dict_insert(dict, "==",     Code_cmp    );
+    Dict_insert(dict, "!=",     Code_not_cmp);
+    Dict_insert(dict, "<",      Code_lt     );
+    Dict_insert(dict, ">",      Code_gt     );
+    Dict_insert(dict, ">=",     Code_gte    );
+    Dict_insert(dict, "<=",     Code_lte    );
 
     // Stack manipulation
-    Dict_insert(dict, Word_create("dup",  Code_dup,         (Pos){0}));
-    Dict_insert(dict, Word_create("drop", Code_drop,        (Pos){0}));
-    Dict_insert(dict, Word_create("swap", Code_swap,        (Pos){0}));
-    Dict_insert(dict, Word_create("over", Code_over,        (Pos){0}));
-    Dict_insert(dict, Word_create("rot",  Code_rot,         (Pos){0}));
-    Dict_insert(dict, Word_create("-rot", Code_minus_rot,   (Pos){0}));
+    Dict_insert(dict, "dup",  Code_dup      );
+    Dict_insert(dict, "drop", Code_drop     );
+    Dict_insert(dict, "swap", Code_swap     );
+    Dict_insert(dict, "over", Code_over     );
+    Dict_insert(dict, "rot",  Code_rot      );
+    Dict_insert(dict, "-rot", Code_minus_rot);
 
     // I/O
-    Dict_insert(dict, Word_create(".",      Code_dot,    (Pos){0}));
-    Dict_insert(dict, Word_create("emit",   Code_emit,   (Pos){0}));
-    Dict_insert(dict, Word_create("cr",     Code_cr,     (Pos){0}));
-    Dict_insert(dict, Word_create("key",    Code_key,    (Pos){0}));
+    Dict_insert(dict, ".",      Code_dot );
+    Dict_insert(dict, "emit",   Code_emit);
+    Dict_insert(dict, "cr",     Code_cr  );
+    Dict_insert(dict, "key",    Code_key );
 
     // Control Flow
-    Dict_insert(dict, Word_create("if",      Code_if,      (Pos){0}));
-    Dict_insert(dict, Word_create("else",    Code_else,    (Pos){0}));
-    Dict_insert(dict, Word_create("then",    Code_then,    (Pos){0}));
-    Dict_insert(dict, Word_create("begin",   Code_begin,   (Pos){0}));
-    Dict_insert(dict, Word_create("while",   Code_while,   (Pos){0}));
-    Dict_insert(dict, Word_create("repeat",  Code_repeat,  (Pos){0}));
+    Dict_insert(dict, "if",      Code_if    );
+    Dict_insert(dict, "else",    Code_else  );
+    Dict_insert(dict, "then",    Code_then  );
+    Dict_insert(dict, "begin",   Code_begin );
+    Dict_insert(dict, "while",   Code_while );
+    Dict_insert(dict, "repeat",  Code_repeat);
 
     // System
-    Dict_insert(dict, Word_create("exit", Code_exit, (Pos){0}));
+    Dict_insert(dict, "exit", Code_exit);
 
-    for (size_t i = 0; i < dict_size; i++)
-    {
-        if (!dict[i])
-            return false;
-    }
     return true;
 }
 
 size_t if_stack[MAX_IF_DEPTH] = {0};
 size_t if_stack_size = 0;
-
-void Raw_words_clear(Word *raw_words[MAX_PROGRAM_SIZE])
-{
-    size_t i = 0;
-    while (raw_words[i])
-    {
-        free((void*)raw_words[i]->name);
-        free((void*)raw_words[i]);
-        i++;
-    }
-}
 
 Cell escape_to_char(const char *s)
 {
@@ -490,13 +455,14 @@ Cell escape_to_char(const char *s)
     return s[0]; // not an escape → return literal character
 }
 
-bool lexer(const char *source, Word *raw_words[MAX_PROGRAM_SIZE], const char *file_name)
+int lexer(const char *source, Word raw_words[MAX_PROGRAM_SIZE], const char *file_name)
 {
 
     size_t word_number = 0;
     size_t i = 0;
     size_t col = 1;
     size_t row = 1;
+    char token[MAX_TOKEN_SIZE];
 
     while (source[i])
     {
@@ -541,6 +507,10 @@ bool lexer(const char *source, Word *raw_words[MAX_PROGRAM_SIZE], const char *fi
                 col++;
                 i++;
             }
+            if(source[i] == '\0'){
+                ERROR("COMPILATION", "unterminated comment", NULL);
+                return -1;
+            }
             if (source[i] == ')')
             {
                 col++;
@@ -558,39 +528,50 @@ bool lexer(const char *source, Word *raw_words[MAX_PROGRAM_SIZE], const char *fi
         Pos pos = {.file = file_name, .col = col - 1, .row = row};
 
         // build token
-        char *token = (char *)malloc(sizeof(*token) * (MAX_TOKEN_SIZE + 1));
-        if (!token)
-        {
-            ERROR("SYSTEM", "no memory", NULL);
-            return false;
-        }
-        size_t j = 0;
-        while (source[i] && !isspace((unsigned char)source[i]) && j < MAX_TOKEN_SIZE - 1)
+        // char *token = (char *)malloc(sizeof(*token) * (MAX_TOKEN_SIZE + 1));
+        // if (!token)
+        // {
+        //     ERROR("SYSTEM", "no memory", NULL);
+        //     return false;
+        // }
+        size_t token_len = 0;
+        while (source[i] && !isspace((unsigned char)source[i]) && token_len < MAX_TOKEN_SIZE - 1)
         {
             col++;
-            token[j++] = source[i++];
+            token[token_len++] = source[i++];
         }
-        token[j] = '\0'; // make sure token is null-terminated
-
-        raw_words[word_number++] = Word_create(token, NULL, pos);
-        if (!raw_words[word_number - 1])
-        {
-            return false;
+        token[token_len] = '\0'; // make sure token is null-terminated
+        
+        memcpy(raw_words[word_number].name, token, token_len + 1);
+        raw_words[word_number].code = NULL;
+        raw_words[word_number].pos = pos;
+        raw_words[word_number].patch = 0;
+        if(token_len >= MAX_TOKEN_SIZE - 1){
+            ERROR("COMPILATION", "word is to long", &program[word_number]);
+            return -1;
         }
+        
+        word_number++;
+        if(word_number >= MAX_PROGRAM_SIZE){
+            ERROR("COMPILATION", "program is to long", NULL);
+            return -1;
+        }
+        memset(token, 0, token_len + 1);
     }
 
-    return true;
+    return word_number;
 }
 
-bool parser(Word *raw_words[MAX_PROGRAM_SIZE], Word *program[MAX_PROGRAM_SIZE], Word *dict[MAX_DICT_SIZE])
+bool parser(Word raw_words[MAX_PROGRAM_SIZE], Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t number_of_words)
 {
     Word *word = NULL;
     size_t i = 0;
     Word *bad_if = NULL;
+    char token[MAX_TOKEN_SIZE];
 
-    while (raw_words[i])
+    while (i < number_of_words)
     {
-        const char *token = raw_words[i]->name;
+        memcpy(token, raw_words[i].name, strlen(raw_words[i].name) + 1);
         /*  lookup the token in the dict.
             If not in the dict then it is a number literal.
             If is in the dict, check if it a Control Flow word, if not addend the word to the program.
@@ -608,11 +589,11 @@ bool parser(Word *raw_words[MAX_PROGRAM_SIZE], Word *program[MAX_PROGRAM_SIZE], 
         {
             if (word->code == Code_if)
             {
-                bad_if = raw_words[i];
+                bad_if = &raw_words[i];
                 if_stack[if_stack_size++] = program_size;
                 if (if_stack_size >= MAX_IF_DEPTH)
                 {
-                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", raw_words[i]);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &raw_words[i]);
                     return false;
                 }
             }
@@ -620,14 +601,14 @@ bool parser(Word *raw_words[MAX_PROGRAM_SIZE], Word *program[MAX_PROGRAM_SIZE], 
             {
                 if (if_stack_size == 0)
                 {
-                    ERROR("COMPILATION", "`else` missing `if` matches", raw_words[i]);
+                    ERROR("COMPILATION", "`else` missing `if` matches", &raw_words[i]);
                     return false;
                 }
                 patch = if_stack[--if_stack_size];    // geting `if` addr
-                program[patch]->patch = program_size; // fixing `if` patch
+                program[patch].patch = program_size; // fixing `if` patch
                 if (if_stack_size >= MAX_IF_DEPTH)
                 {
-                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", raw_words[i]);
+                    ERROR("COMPILATION", "maximum number of nested `if` blocks exceeded", &raw_words[i]);
                     return false;
                 }
                 if_stack[if_stack_size++] = program_size; // leave `else`addr on stack for `then` to patch
@@ -637,30 +618,28 @@ bool parser(Word *raw_words[MAX_PROGRAM_SIZE], Word *program[MAX_PROGRAM_SIZE], 
                 bad_if = NULL;
                 if (if_stack_size == 0)
                 {
-                    ERROR("COMPILATION", "`then` missing `if` matches", raw_words[i]);
+                    ERROR("COMPILATION", "`then` missing `if` matches", &raw_words[i]);
                     return false;
                 }
                 patch = if_stack[--if_stack_size];    // geting `else` addr
-                program[patch]->patch = program_size; // fixing `else` patch to `then` addr
+                program[patch].patch = program_size; // fixing `else` patch to `then` addr
             }
 
-            program[program_size++] = Word_create(token, word->code, raw_words[i]->pos);
-            if (!program[program_size - 1])
-            {
-                ERROR("SYSTEM", "no memory", raw_words[i]);
-                return false;
-            }
-            program[program_size - 1]->patch = patch;
+            program[program_size].code = word->code;
+            program[program_size].patch = patch;
+            program[program_size].pos = raw_words[i].pos;
+            memcpy(program[program_size].name, token, strlen(token) + 1);
+
+            program_size++;
         }
         else
         {
-            program[program_size++] = Word_create(token, NULL, raw_words[i]->pos); // code==NULL indicate a number literal
-            if (!program[program_size - 1])
-            {
-                ERROR("SYSTEM", "no memory", raw_words[i]);
-                return false;
-            }
-            program[program_size - 1]->patch = patch;
+            program[program_size].code = NULL; // code==NULL indicate a number literal
+            program[program_size].patch = patch;
+            program[program_size].pos = raw_words[i].pos;
+            memcpy(program[program_size].name, token, strlen(token) + 1);
+
+            program_size++;
         }
         i++;
     }
@@ -672,12 +651,12 @@ bool parser(Word *raw_words[MAX_PROGRAM_SIZE], Word *program[MAX_PROGRAM_SIZE], 
     return true;
 }
 
-bool interpreter(Word *program[MAX_PROGRAM_SIZE])
+bool interpreter(Word program[MAX_PROGRAM_SIZE])
 {
     ip = 0;
     while (ip < program_size)
     {
-        Word *word = program[ip];
+        Word *word = &program[ip];
         if (word->code)
         {
             word->code();
@@ -722,8 +701,8 @@ bool interpreter(Word *program[MAX_PROGRAM_SIZE])
 int main(int argc, char *argv[])
 {
 
-    char source[MAX_FILE_SIZE];
-    Word *raw_words[MAX_PROGRAM_SIZE] = {0};
+    char source[MAX_FILE_SIZE] = {0};
+    Word raw_words[MAX_PROGRAM_SIZE] = {0};
     const char *file_path = NULL;
 
     if (argc == 2)
@@ -748,40 +727,26 @@ int main(int argc, char *argv[])
 
     if (!Dict_init_default(dict))
     {
-        Dict_clear(dict);
-        Program_clear(program);
-        Raw_words_clear(raw_words);
         return 1;
     }
 
-    if (!lexer(source, raw_words, file_path))
-    {
-        Dict_clear(dict);
-        Program_clear(program);
-        Raw_words_clear(raw_words);
+    int word_number = lexer(source, raw_words, file_path); // int for error detection
+    if(word_number < 0){
         return 1;
     }
 
-    if (!parser(raw_words, program, dict))
+    if (!parser(raw_words, program, dict, (size_t)word_number))
     {
-        Dict_clear(dict);
-        Program_clear(program);
-        Raw_words_clear(raw_words);
         return 1;
     }
 
     Program_dump(program); // for debug
+    Dict_dump(dict);
 
     if (!interpreter(program))
     {
-        Dict_clear(dict);
-        Program_clear(program);
-        Raw_words_clear(raw_words);
         return 1;
     }
 
-    Dict_clear(dict);
-    Program_clear(program);
-    Raw_words_clear(raw_words);
     return 0;
 }
