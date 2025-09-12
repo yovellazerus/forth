@@ -599,7 +599,7 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
         memcpy(token, program[i].name, strlen(program[i].name) + 1);
         word = Dict_find(dict, token);
 
-        if(in_colon_index > 0){
+        if(in_colon_index >= 0){
             // pares the new name
             if(in_colon_index == 0){
                 if(Dict_find(dict, token)){
@@ -608,6 +608,10 @@ bool parser(Word program[MAX_PROGRAM_SIZE], Word dict[MAX_DICT_SIZE], size_t num
                 }
                 Dict_insert(dict, token, NULL);
                 new_word = word;
+                in_colon_index++;
+
+                program_size++;
+
                 continue;
             }
             if(in_colon_index == 1){
